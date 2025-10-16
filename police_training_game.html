@@ -397,14 +397,16 @@
     el.btnPromote.style.display = allow ? "" : "none";
     el.btnPromote.title = allow ? "연차 도달! 승진 도전 가능" : "연차가 되면 자동으로 활성화됩니다.";
     if(allow){
-      // 자동 팝업으로도 기회 제공(비용 없음)
       const req = tryPromoteRollRequirement(state.rankIdx);
-      openPromo("🎖️ 연차 승진도전", `필요 ${req}점 (비용 없음)`, (a,b)=>{
+      // require cost to attempt
+      if(state.gold < state.cost){ openPopup("💰 부족", [`연차 승진도전 비용 ${state.cost}💰이 필요합니다.`]); return; }
+      state.gold -= state.cost; updateHUD();
+      openPromo("🎖️ 연차 승진도전", `필요 ${req}점 (비용 ${state.cost}💰)`, (a,b)=>{
+        // cost already validated before opening
         const sum=a+b;
-        if(sum >= req){ doPromote("승진도전 성공(연차)"); }
+        if(sum >= req){ doPromote("승진도전 성공(연차)"); openPopup("✅ 승진 성공", [`필요${req}점, 당신의 점수 ${sum}점 성공`]); }
         else{ openPopup("❌ 연차 승진 실패", [`필요${req}점, 당신의 점수 ${sum}점 실패`]); }
         el.promo.style.display="none";
-        // 도전 후엔 버튼 숨김(같은 연차에 중복 도전 방지). 다음 연차에 다시 활성화
         el.btnPromote.disabled = true; el.btnPromote.style.display="none";
       });
     }
@@ -578,7 +580,7 @@
       return;
     }
     const req = tryPromoteRollRequirement(state.rankIdx);
-    openPromo("🎖️ 승진도전", `필요 ${req}점`, (a,b)=>{
+    openPromo("🎖️ 승진도전", `필요 ${req}점 (비용 ${state.cost}💰 지불됨)`, (a,b)=>{
       const sum=a+b;
       if(sum >= req){
         doPromote("승진도전 성공");
@@ -587,7 +589,6 @@
         openPopup("❌ 승진 실패", [`필요${req}점, 당신의 점수 ${sum}점 실패`]);
       }
       el.promo.style.display="none";
-      // 같은 연차에서 중복 도전 방지
       el.btnPromote.disabled = true; el.btnPromote.style.display="none";
     });
   };
