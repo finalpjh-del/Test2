@@ -123,6 +123,7 @@
         <button id="btnAmmo" class="ok">🔄 다음 턴 탄종: 9mm</button>
       </div>
       <div class="small">턴 종료 상태: 여기서 구급함 구매/사용 가능</div>
+      <div class="small">구급함은 보유 수량 내에서 횟수 제한 없이 사용할 수 있습니다.</div>
     </div>
 
     <div style="margin-top:6px">
@@ -333,7 +334,7 @@
     $("endTitle").textContent = title;
     $("endList").innerHTML=lines.map(s=>`<li>${s}</li>`).join("");
     if(state.promotions.length){
-      $("promoList").innerHTML = state.promotions.map(p=>`<li>• ${p.from}→${p.to} : ${fmtNthYear(p.at)}</li>`).join("");
+      $("promoList").innerHTML = state.promotions.map(p=>{ const ty=`${Math.floor((p.tenure||0)/12)}년 ${String((p.tenure||0)%12).padStart(2,"0")}개월`; return `<li>• ${p.from}→${p.to} : ${fmtNthYear(p.at)} (해당 계급 재직 ${ty})</li>`;}).join("");
     }else{
       $("promoList").innerHTML = `<li class="small">기록 없음</li>`;
     }
@@ -404,7 +405,7 @@
       openPromo("🎖️ 연차 승진도전", `필요 ${req}점 (비용 ${state.cost}💰)`, (a,b)=>{
         // cost already validated before opening
         const sum=a+b;
-        if(sum >= req){ doPromote("승진도전 성공(연차)"); openPopup("✅ 승진 성공", [`필요${req}점, 당신의 점수 ${sum}점 성공`]); }
+        if(sum >= req){ doPromote("승진도전 성공(연차)"); openPopup("✅ 승진 성공", [`필요${req}점, 당신의 점수 ${sum}점 성공`, "혜택: 최대체력 +10"]); }
         else{ openPopup("❌ 연차 승진 실패", [`필요${req}점, 당신의 점수 ${sum}점 실패`]); }
         el.promo.style.display="none";
         el.btnPromote.disabled = true; el.btnPromote.style.display="none";
@@ -552,7 +553,8 @@
 
   function recordPromotion(prevIdx, nowIdx, kindLabel="승진"){
     logRankChange(kindLabel, prevIdx, nowIdx);
-    state.promotions.push({from:RANKS[prevIdx], to:RANKS[nowIdx], at: state.monthsAccum});
+    const tenureM = state.monthsAccum - state.lastRankChangeMonths;
+    state.promotions.push({from:RANKS[prevIdx], to:RANKS[nowIdx], at: state.monthsAccum, tenure: tenureM});
     state.lastRankChangeMonths = state.monthsAccum;
   }
 
@@ -584,7 +586,7 @@
       const sum=a+b;
       if(sum >= req){
         doPromote("승진도전 성공");
-        openPopup("✅ 승진 성공", [`필요${req}점, 당신의 점수 ${sum}점 성공`]);
+        openPopup("✅ 승진 성공", [`필요${req}점, 당신의 점수 ${sum}점 성공`, "혜택: 최대체력 +10"]);
       }else{
         openPopup("❌ 승진 실패", [`필요${req}점, 당신의 점수 ${sum}점 실패`]);
       }
