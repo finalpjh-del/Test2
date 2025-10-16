@@ -20,7 +20,7 @@
   .bar{display:flex;align-items:center;justify-content:space-between;padding:8px 10px}
   .pill{background:#0b1020;color:#fff;border-radius:999px;padding:8px 12px;font-weight:700;text-decoration:none}
   .hud{margin:6px 0 2px}
-  #pDice,#eDice{font-size:92px;display:inline-block}
+  #pDice,#eDice,#promoD1,#promoD2{font-size:92px;display:inline-block}
   .shake{animation:shake .3s ease}
   @keyframes shake{
     0%{transform:translate(-2px,0) scale(1) rotate(0deg)}
@@ -62,21 +62,21 @@
       <div class="titlechip">🪪 신원 선택</div>
       <div style="height:8px"></div>
       <div>조직</div>
-      <div class="seg" role="group">
-        <button id="orgPolice">🚓 경찰</button>
-        <button id="orgCoast">🚤 해양경찰</button>
+      <div class="seg" role="group" id="grpOrg">
+        <button data-org="police" id="orgPolice">🚓 경찰</button>
+        <button data-org="coast" id="orgCoast">🚤 해양경찰</button>
       </div>
       <div style="height:10px"></div>
       <div>성별</div>
-      <div class="seg" role="group">
-        <button id="genderM">👨 남자</button>
-        <button id="genderF">👩 여자</button>
+      <div class="seg" role="group" id="grpGender">
+        <button data-g="M" id="genderM">👨 남자</button>
+        <button data-g="F" id="genderF">👩 여자</button>
       </div>
       <div style="height:10px"></div>
       <div>시작 계급</div>
-      <div class="seg" role="group">
-        <button id="rankStartA">순경</button>
-        <button id="rankStartB">경위</button>
+      <div class="seg" role="group" id="grpRank">
+        <button data-rank="1" id="rankStartA">순경</button>
+        <button data-rank="4" id="rankStartB">경위</button>
       </div>
       <div style="height:10px"></div>
       <div class="flex">
@@ -102,7 +102,6 @@
       | ❤️ <span id="hp">50</span>/<span id="maxhp">50</span>
       | 💰 <span id="gold">0</span>
       | 💉 구급함 <span id="bags">0</span>
-      <!-- 근무개월 표시는 플레이 화면에서 제거 -->
     </div>
     <div>⚔️ 적: <span id="enemyName"></span> (체력: <span id="enemyHP"></span>)</div>
     <div style="margin-top:6px">
@@ -139,6 +138,22 @@
     </div>
   </div>
 
+  <!-- 승진 도전 전용 모달 (주사위 이모티콘 시각화) -->
+  <div id="promo" class="overlay">
+    <div class="modal pop-enter" style="max-width:680px;text-align:center">
+      <div class="titlechip" id="promoTitle">🎖️ 승진도전</div>
+      <div class="small" id="promoDesc">주사위 2개 합이 요구치 이상이면 승진</div>
+      <div class="flex" style="margin-top:8px">
+        <span id="promoD1">🎲</span>
+        <span id="promoD2">🎲</span>
+      </div>
+      <div class="flex" style="justify-content:center;margin-top:6px">
+        <button id="promoGo" class="ok">🎲 주사위 굴리기</button>
+        <button id="promoCancel" class="pill">취소</button>
+      </div>
+    </div>
+  </div>
+
   <div id="ending">
     <div class="panel pop-enter">
       <h2 id="endTitle">엔딩</h2>
@@ -169,6 +184,7 @@
     start:$("start"), game:$("game"), pop:$("pop"), popTitle:$("popTitle"), popList:$("popList"), popOk:$("popOk"),
     btnStart:$("btnStart"), nm:$("nm"), orgPolice:$("orgPolice"), orgCoast:$("orgCoast"),
     genderM:$("genderM"), genderF:$("genderF"), rankStartA:$("rankStartA"), rankStartB:$("rankStartB"),
+    grpOrg:$("grpOrg"), grpGender:$("grpGender"), grpRank:$("grpRank"),
     orgBadge:$("orgBadge"), emoji:$("emoji"), rank:$("rank"), name:$("name"),
     hp:$("hp"), maxhp:$("maxhp"), gold:$("gold"), bags:$("bags"),
     enemyName:$("enemyName"), enemyHP:$("enemyHP"), btnRoll:$("btnRoll"), btnFire:$("btnFire"),
@@ -176,7 +192,9 @@
     after:$("after"), btnRest:$("btnRest"), btnBuyBag:$("btnBuyBag"), btnPromote:$("btnPromote"), cost:$("cost"), btnUseBag:$("btnUseBag"),
     btnAmmo:$("btnAmmo"),
     ending:$("ending"), endTitle:$("endTitle"), endList:$("endList"), hist:$("hist"), kill:$("kill"), promoList:$("promoList"),
-    btnResign:$("btnResign")
+    btnResign:$("btnResign"),
+    promo:$("promo"), promoTitle:$("promoTitle"), promoDesc:$("promoDesc"),
+    promoD1:$("promoD1"), promoD2:$("promoD2"), promoGo:$("promoGo"), promoCancel:$("promoCancel")
   };
 
   const state = {
@@ -190,7 +208,8 @@
     equalStreak:0, ammo:'22lr',
     demotionCount:0,
     lastRankChangeMonths:0,
-    promotions:[] // {from,to,at:months}
+    promotions:[],
+    lastYearCheckAt:0 // 최근 '연도 단위' 체크 시점(개월)
   };
 
   const rint=(a,b)=>Math.floor(Math.random()*(b-a+1))+a;
@@ -201,6 +220,22 @@
   const updateFireLabel=()=>{ el.btnFire.textContent = (state.ammo==='9mm') ? "🔫 격발 (-4💰)" : "🔫 격발 (-3💰)"; };
   const fmtYM=(months)=>{ const y=Math.floor((months||0)/12), m=(months||0)%12; return m===0 ? `${String(y).padStart(2,'0')}년` : `${String(y).padStart(2,'0')}년 ${String(m).padStart(2,'0')}개월`; };
   const monthsInRank=()=> state.monthsAccum - state.lastRankChangeMonths;
+
+  // ====== Radio-like selection handlers (조직/성별/시작계급 복수선택 방지) ======
+  function setupRadioGroup(container, selector, onSelect){
+    const btns = Array.from(container.querySelectorAll(selector));
+    btns.forEach(b=>{
+      b.addEventListener('click', ()=>{
+        btns.forEach(x=>x.classList.remove('selected'));
+        b.classList.add('selected');
+        onSelect(b);
+      });
+    });
+  }
+
+  setupRadioGroup(el.grpOrg, 'button', (b)=>{ state.org = b.dataset.org; });
+  setupRadioGroup(el.grpGender, 'button', (b)=>{ state.gender = b.dataset.g; });
+  setupRadioGroup(el.grpRank, 'button', (b)=>{ state.startRankIdx = parseInt(b.dataset.rank||'1'); });
 
   const updateHUD=()=>{
     el.orgBadge.textContent=(state.org==='coast'?'🚤 해양경찰':'🚓 경찰');
@@ -220,6 +255,30 @@
   const closePopup=()=> el.pop.style.display="none";
   el.popOk.onclick=closePopup; el.pop.onclick=e=>{ if(e.target===el.pop) closePopup(); };
 
+  const openPromo=(title,desc, rollCallback)=>{
+    el.promoTitle.textContent = title;
+    el.promoDesc.textContent = desc;
+    el.promoD1.textContent = "🎲";
+    el.promoD2.textContent = "🎲";
+    el.promo.style.display = "flex";
+    const rollOnce = ()=>{
+      const a=rint(1,6), b=rint(1,6);
+      el.promoD1.classList.add("shake");
+      el.promoD2.classList.add("shake");
+      setTimeout(()=>{
+        el.promoD1.classList.remove("shake");
+        el.promoD2.classList.remove("shake");
+        el.promoD1.textContent = ['⚀','⚁','⚂','⚃','⚄','⚅'][a-1];
+        el.promoD2.textContent = ['⚀','⚁','⚂','⚃','⚄','⚅'][b-1];
+        rollCallback(a,b);
+      },300);
+    };
+    const onGo = ()=> rollOnce();
+    const onCancel = ()=>{ el.promo.style.display="none"; el.promoGo.removeEventListener('click', onGo); el.promoCancel.removeEventListener('click', onCancel); };
+    el.promoGo.addEventListener('click', onGo);
+    el.promoCancel.addEventListener('click', onCancel);
+  };
+
   const pickEnemy=()=>{ const t=enemyTier(state.level); const list=ENEMIES[t]; const name=list[rint(0,list.length-1)]; state.enemyLabel=`Lv.${state.level} ${name}`; state.enemyHP=9+state.level*1; };
   const spawnEnemy=()=>{ el.after.style.display="none"; pickEnemy(); updateHUD(); setBtns(true); el.msg.textContent="⚔️ 제압 중..."; el.pDice.textContent="🎲"; el.eDice.textContent="🎲"; state.equalStreak=0; };
 
@@ -231,7 +290,7 @@
     return "";
   }
 
-  function saveMemorial(endTitle, extraLines=[]) {
+  function saveMemorial(endTitle) {
     try{
       const entry = {
         id: Date.now(),
@@ -256,7 +315,6 @@
   }
 
   function addEndLines(base){
-    const mAll=state.monthsAccum, y=Math.floor(mAll/12), m=mAll%12;
     const startStr = new Date(state.startDate).toLocaleDateString('ko-KR',{year:'numeric',month:'long',day:'numeric'});
     const lastGold = state.finalGold || state.gold || 0;
     base.push(`입사 : ${startStr} ${orgName()} ${state.entryRank}`);
@@ -265,32 +323,27 @@
     base.push(`마지막 보유 골드 : ${lastGold}`);
   }
 
-  function openEnding(title, extra=[]) {
+  function openEnding(title) {
     state.ended = true;
     const lines = [];
     if(title==="순직"){ lines.push("🪦 순직으로 인한 1계급 특진"); }
     addEndLines(lines);
-    el.endTitle.textContent = title;
-    el.endList.innerHTML=lines.map(s=>`<li>${s}</li>`).join("");
-
-    // promotions list
+    $("endTitle").textContent = title;
+    $("endList").innerHTML=lines.map(s=>`<li>${s}</li>`).join("");
     if(state.promotions.length){
-      el.promoList.innerHTML = state.promotions.map(p=>`<li>• ${p.from}→${p.to} : ${fmtYM(p.at)}차</li>`).join("");
+      $("promoList").innerHTML = state.promotions.map(p=>`<li>• ${p.from}→${p.to} : ${fmtYM(p.at)}차</li>`).join("");
     }else{
-      el.promoList.innerHTML = `<li class="small">기록 없음</li>`;
+      $("promoList").innerHTML = `<li class="small">기록 없음</li>`;
     }
-
-    el.hist.innerHTML = state.changeLog.length? state.changeLog.map(s=>`<li>• ${s}</li>`).join(""):`<li class="small">기록 없음</li>`;
+    $("hist").innerHTML = state.changeLog.length? state.changeLog.map(s=>`<li>• ${s}</li>`).join(""):`<li class="small">기록 없음</li>`;
     const ks=Object.keys(state.defeated);
-    el.kill.innerHTML = ks.length? ks.map(k=>`<li>${k}: ${state.defeated[k]}명</li>`).join(""):`<li class="small">기록 없음</li>`;
+    $("kill").innerHTML = ks.length? ks.map(k=>`<li>${k}: ${state.defeated[k]}명</li>`).join(""):`<li class="small">기록 없음</li>`;
     saveMemorial(title);
-    el.ending.style.display="flex";
+    $("ending").style.display="flex";
   }
 
   function onDeath(){
-    // 제압 종료 시점에 4개월 누적
     state.monthsAccum += MONTHS_PER_CLEAR;
-    // 순직 특진 (1계급)
     if(state.rankIdx < RANKS.length-1){ state.rankIdx += 1; }
     updateHUD();
     openEnding("순직");
@@ -298,16 +351,14 @@
 
   const logRankChange=(kind, prevIdx, nowIdx)=>{
     const R=RANKS, prev=R[prevIdx], now=R[nowIdx];
-    const icon=kind.includes('근속')?'🏆':(kind==='승진'?'⬆️':'⬇️');
+    const icon=kind.includes('근속')?'🏆':(kind.startsWith('승진')?'⬆️':'⬇️');
     state.changeLog.push(`${icon} ${prev} → ${now} ${kind}`);
   };
 
   const costForRank=(idx)=>{
     if(idx===0) return 7; // 의경 -> 순경 (별도)
-    // 순경(1) 기준 10에서 매 단계 1.3배
-    const steps = idx-1; // number of multipliers already applied to reach idx->idx+1
-    const v = Math.ceil(10 * (1.3 ** steps));
-    return v;
+    const steps = idx-1; // number of multipliers already applied
+    return Math.ceil(10 * (1.3 ** steps));
   };
 
   function grantGold(){
@@ -334,15 +385,33 @@
     return false;
   }
 
+  // ===== 연간(3턴) 자동 승진 기회 부여 =====
+  function maybeYearlyPromotionChance(){
+    const m = state.monthsAccum;
+    const last = state.lastYearCheckAt || 0;
+    if(m - last < 12) return; // 아직 1년 경과 안함
+    // 1년 경과 시점에 체크
+    state.lastYearCheckAt = m;
+    // 최소 근무연수 충족 & 상위 계급 존재 시 자동 도전 기회 팝업
+    const needMonths = minMonthsForNext(state.rankIdx);
+    const TOP=RANKS.length-1;
+    if(state.rankIdx>=TOP) return;
+    if(monthsInRank() >= needMonths){
+      const req = tryPromoteRollRequirement(state.rankIdx);
+      openPromo("🎖️ 연간 승진도전", `요구합계 ≥ ${req} (비용 없음)`, (a,b)=>{
+        const sum=a+b;
+        if(sum >= req){ doPromote("승진도전 성공(연간)"); }
+        else{ openPopup("❌ 연간 승진 실패", [`요구합계 ≥ ${req}`, `합계 = ${sum}`]); }
+        el.promo.style.display="none";
+      });
+    }
+  }
+
   function afterClearMonthAndChecks(){
-    // 누적 4개월 (제압 종료 시)
-    state.monthsAccum += MONTHS_PER_CLEAR;
-
-    // 근속승진 체크
+    state.monthsAccum += MONTHS_PER_CLEAR; // 제압 종료 시 +4개월
     checkLongServicePromotion();
-
-    // 정년퇴직 체크 (현 계급에서 승/강 불발로 일정 기간)
     checkRetirement();
+    maybeYearlyPromotionChance();
   }
 
   function handleVictory(){
@@ -365,9 +434,7 @@
     }else{
       const earned=grantGold(); text=`적을 제압했다! +${earned} 골드 획득!`;
     }
-
     afterClearMonthAndChecks();
-
     el.btnAmmo.textContent = state.ammo==='22lr' ? "🔄 다음 턴 탄종: 9mm" : "🔄 다음 턴 탄종: 22lr";
     el.msg.textContent=text; setBtns(false); el.after.style.display="block";
     if(state.level>=MAX_LEVEL){ openEnding("정년퇴직"); }
@@ -410,8 +477,9 @@
     },300);
   };
 
+  // ===== 새로운 격발 스펙 (명중률/데미지) =====
   function fireStats(){
-    return (state.ammo==='9mm') ? {cost:4, hit:0.45, min:35, max:45} : {cost:3, hit:0.50, min:20, max:25};
+    return (state.ammo==='9mm') ? {cost:4, hit:0.68, min:20, max:40} : {cost:3, hit:0.75, min:10, max:25};
   }
 
   function enemyCounterThenResume(){
@@ -461,8 +529,6 @@
   el.btnBuyBag.onclick=()=>{ if(state.ended) return; if(state.gold>=5){ state.gold-=5; state.bags+=1; updateHUD(); } else{ el.msg.textContent="💰 골드가 부족합니다!"; } };
 
   function tryPromoteRollRequirement(idx){
-    // idx is current rank index, trying to go idx -> idx+1
-    // 의경(0): 3+, 순경~경장(1~2): 4+, 경사~경위(3~4): 5+, 경감~경정(5~6): 6+, 총경~경무관(7~8):7+, 치안감~치안총감(9~10):8+
     if(idx===0) return 3;
     if(idx>=1 && idx<=2) return 4;
     if(idx>=3 && idx<=4) return 5;
@@ -472,11 +538,10 @@
   }
 
   function minMonthsForNext(idx){
-    // current rank idx; minimum tenure in this rank to attempt promotion
-    if(idx===0) return 36; // 의경 -> 순경 3년 근속승진 기준을 일반도전에도 적용
-    if(idx>=1 && idx<=4) return 12; // 순경~경위
-    if(idx>=5 && idx<=6) return 24; // 경감~경정
-    if(idx>=7 && idx<=9) return 12; // 총경~치안정감 (치안총감은 최상위라 도전 안됨)
+    if(idx===0) return 36;
+    if(idx>=1 && idx<=4) return 12;
+    if(idx>=5 && idx<=6) return 24;
+    if(idx>=7 && idx<=9) return 12;
     return 0;
   }
 
@@ -497,42 +562,41 @@
     updateHUD(); openPopup("🎖️ " + kindLabel + "!",[`계급: ${prev} → ${RANKS[state.rankIdx]}`,`최대체력 +10`]);
   }
 
+  // 수동 승진도전 버튼: 비용 소모 + 모달 주사위 표시
   el.btnPromote.onclick=()=>{
     if(state.ended) return;
     const TOP=RANKS.length-1; if(state.rankIdx>=TOP){ openEnding("명예퇴직"); return; }
-    // min tenure check
     const needMonths = minMonthsForNext(state.rankIdx);
     if(monthsInRank() < needMonths){
       openPopup("⏳ 승진도전 불가", `현 계급에서 최소 ${Math.floor(needMonths/12)}년 경과 후 도전 가능 (현재: ${fmtYM(monthsInRank())})`);
       return;
     }
     const req = tryPromoteRollRequirement(state.rankIdx);
-    if(state.gold < state.cost){ el.msg.textContent="💰 골드가 부족합니다!"; return; }
-    // 소비 후 도전
+    if(state.gold < state.cost){ $("msg").textContent="💰 골드가 부족합니다!"; return; }
     state.gold -= state.cost; updateHUD();
-    const a=rint(1,6), b=rint(1,6); el.pDice.textContent=DICE[a-1]; el.eDice.textContent=DICE[b-1];
-    const sum=a+b;
-    if(sum >= req){
-      doPromote("승진도전 성공");
-    }else{
-      openPopup("❌ 승진도전 실패", [`요구합계 ≥ ${req}`, `나온 합계 = ${sum}`]);
-    }
+    openPromo("🎖️ 승진도전", f"요구합계 ≥ {req}", (a,b)=>{
+      const sum=a+b;
+      if(sum >= req){
+        doPromote("승진도전 성공");
+      }else{
+        openPopup("❌ 승진도전 실패", [`요구합계 ≥ ${req}`, `합계 = ${sum}`]);
+      }
+      el.promo.style.display="none";
+    });
   };
 
   el.btnUseBag.onclick=()=>{
     if(state.ended) return;
-    if(state.hp>=state.maxHP){ el.msg.textContent="❤️ 체력이 가득 찼습니다."; return; }
+    if(state.hp>=state.maxHP){ $("msg").textContent="❤️ 체력이 가득 찼습니다."; return; }
     if(state.bags>0){
       state.bags-=1; state.hp=Math.min(state.maxHP,state.hp+30); updateHUD();
       if(el.after.style.display==="none"){
-        // 제압 중 사용: 내 턴 무효, 적 반격만
         setBtns(false);
         enemyCounterThenResume();
       }else{
-        // 턴 종료 상태에서 사용: 즉시 회복, 반격 없음
-        el.msg.textContent="💉 구급함 사용: ❤️+30";
+        $("msg").textContent="💉 구급함 사용: ❤️+30";
       }
-    } else{ el.msg.textContent="💉 구급함이 없습니다!"; }
+    } else{ $("msg").textContent="💉 구급함이 없습니다!"; }
   };
 
   function applyStartRank(){
@@ -563,14 +627,15 @@
       level:1, maxHP:50, hp:50, gold:0, bags:0, enemyHP:0, enemyLabel:"", cost:10,
       ended:false, startDate:new Date(), defeated:{},
       changeLog:[], monthsAccum:0, finalGold:0, equalStreak:0, ammo:'22lr', demotionCount:0,
-      lastRankChangeMonths:0, promotions:[]
+      lastRankChangeMonths:0, promotions:[], lastYearCheckAt:0
     });
     el.start.style.display="flex"; el.game.style.display="none"; resetSelections(); setBtns(true); updateHUD();
   }
 
   el.btnStart.onclick=()=>{
-    if(!state.org) state.org=Math.random()<0.5?'police':'coast';
-    if(!state.gender) state.gender=Math.random()<0.5?'M':'F';
+    // 기본값 보정
+    if(!state.org) state.org='police';
+    if(!state.gender) state.gender='M';
     const nm=($("nm").value||"").trim();
     state.name = nm ? nm : (state.org==='police' ? (state.gender==='F'?'포순':'포돌') : (state.gender==='F'?'해누리':'해우리'));
     state.startDate = new Date();
@@ -578,32 +643,29 @@
     el.start.style.display="none"; el.game.style.display="block"; setBtns(true); spawnEnemy(); updateHUD();
   };
 
-  // 근속승진 로직
   function checkLongServicePromotion(){
     const idx = state.rankIdx;
     const m = monthsInRank();
     let need = null;
-    if(idx===0) need = 36; // 의경 -> 순경
-    else if(idx===1) need = 48; // 순경 -> 경장
-    else if(idx===2) need = 60; // 경장 -> 경사
-    else if(idx===3) need = 78; // 경사 -> 경위 (6년 6개월)
-    else if(idx===4) need = 96; // 경위 -> 경감
+    if(idx===0) need = 36;
+    else if(idx===1) need = 48;
+    else if(idx===2) need = 60;
+    else if(idx===3) need = 78;
+    else if(idx===4) need = 96;
     else need = null;
-
     if(need!=null && m >= need){
       doPromote("근속승진");
     }
   }
 
-  // 정년퇴직 로직 (현 계급에서 일정 기간 정체)
   function checkRetirement(){
     const idx=state.rankIdx;
     const m=monthsInRank();
     let limit=null;
-    if(idx===6) limit=168;      // 경정 14년
-    else if(idx===7) limit=132; // 총경 11년
-    else if(idx===8) limit=72;  // 경무관 6년
-    else if(idx===9) limit=48;  // 치안감 4년
+    if(idx===6) limit=168;
+    else if(idx===7) limit=132;
+    else if(idx===8) limit=72;
+    else if(idx===9) limit=48;
     if(limit!=null && m>=limit){
       openPopup("🎖️ 정년퇴직", `현 계급 ${RANKS[idx]}에서 ${fmtYM(m)} 동안 승진/강등이 없어 정년퇴직합니다.`);
       openEnding("정년퇴직");
