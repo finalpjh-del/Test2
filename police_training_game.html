@@ -1,1 +1,113 @@
-<!-- police_training_game.html v4 placeholder -->
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>경찰 양성 게임</title>
+  <style>
+    body{margin:0;background:linear-gradient(90deg,#ff9966,#ff5e62);color:#fff;
+         font-family:system-ui,Arial,sans-serif;text-align:center}
+    button{margin:6px;padding:10px 16px;border:none;border-radius:10px;cursor:pointer;font-weight:800}
+    .ok{background:#111;color:#fff}
+    .overlay{position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center}
+    .modal{background:#fff;color:#111;padding:18px;border-radius:14px;width:min(92vw,360px);text-align:left}
+    .row{margin:8px 0}
+    input[type=text]{width:100%;padding:8px;border-radius:8px;border:1px solid #ddd}
+  </style>
+</head>
+<body>
+  <h1>🎮 경찰 양성 게임</h1>
+
+  <div id="start" class="overlay">
+    <div class="modal">
+      <h3>🪪 신원 선택</h3>
+      <div class="row">조직<br>
+        <button id="orgPolice">경찰</button>
+        <button id="orgCoast">해양경찰</button>
+      </div>
+      <div class="row">성별<br>
+        <button id="genderM">남자</button>
+        <button id="genderF">여자</button>
+      </div>
+      <div class="row">시작 계급<br>
+        <button id="rankStartA">순경</button>
+        <button id="rankStartB">경위</button>
+      </div>
+      <div class="row">
+        <input id="nm" type="text" placeholder="이름(선택)">
+      </div>
+      <div class="row" style="text-align:right">
+        <button id="btnStart" class="ok">시작</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="game" style="display:none">
+    <h3 id="orgBadge">🚓 경찰</h3>
+    <p><span id="emoji">👮</span> <span id="rank">순경</span> <span id="name">—</span></p>
+    <p>❤️ <span id="hp">50</span>/<span id="maxhp">50</span> | 💰 <span id="gold">0</span></p>
+    <p>⚔️ 적: <span id="enemyName"></span> (HP: <span id="enemyHP"></span>)</p>
+    <p><button id="btnRoll" class="ok">🎲 굴리기</button> <button id="btnFire" class="ok">🔫 격발</button></p>
+    <p>나: <span id="pDice">🎲</span> vs 적: <span id="eDice">🎲</span></p>
+    <p id="msg">⚔️ 제압 중...</p>
+  </div>
+
+<script>
+(function(){
+  const $=id=>document.getElementById(id);
+  const el={start:$("start"),game:$("game"),btnStart:$("btnStart"),
+            orgPolice:$("orgPolice"),orgCoast:$("orgCoast"),
+            genderM:$("genderM"),genderF:$("genderF"),
+            rankStartA:$("rankStartA"),rankStartB:$("rankStartB"),
+            orgBadge:$("orgBadge"),emoji:$("emoji"),rank:$("rank"),name:$("name"),
+            hp:$("hp"),maxhp:$("maxhp"),gold:$("gold"),
+            enemyName:$("enemyName"),enemyHP:$("enemyHP"),
+            btnRoll:$("btnRoll"),btnFire:$("btnFire"),pDice:$("pDice"),eDice:$("eDice"),msg:$("msg")};
+
+  const RANKS=["의경","순경","경장","경사","경위","경감","경정","총경"];
+  const DICE=['⚀','⚁','⚂','⚃','⚄','⚅'];
+  const ENEMIES={1:["🧟‍♂️ 주취자","🦹‍♂️ 보이스피싱"],2:["🤹‍♂️ 사기꾼","👨‍💻 스토커"],3:["🧌 조폭","💊 마약사범"],4:["👤 간첩","🪖 테러리스트"]};
+
+  const s={org:null,gender:null,name:"—",rankIdx:1,hp:50,maxHP:50,gold:0,enemyHP:0,enemyLabel:"",lvl:1};
+
+  function updateHUD(){
+    el.orgBadge.textContent=(s.org==="coast"?"🚤 해양경찰":"🚓 경찰");
+    el.emoji.textContent=(s.gender==="F"?"👮‍♀️":"👮‍♂️");
+    el.rank.textContent=RANKS[s.rankIdx]||"순경";
+    el.name.textContent=s.name;
+    el.hp.textContent=s.hp; el.maxhp.textContent=s.maxHP; el.gold.textContent=s.gold;
+    el.enemyName.textContent=s.enemyLabel; el.enemyHP.textContent=s.enemyHP;
+  }
+  function pickEnemy(){const arr=ENEMIES[Math.min(4,Math.ceil(s.lvl/10))]||["👤 범죄자"];s.enemyLabel=arr[Math.floor(Math.random()*arr.length)];s.enemyHP=9+s.lvl;}
+  function spawnEnemy(){pickEnemy();updateHUD();el.msg.textContent="⚔️ 제압 중...";el.pDice.textContent="🎲";el.eDice.textContent="🎲";}
+
+  function onStart(){
+    if(!s.org)s.org="police";
+    if(!s.gender)s.gender="M";
+    s.name=($("nm").value||"").trim()|| (s.org==='police' ? (s.gender==='F'?'포순':'포돌') : (s.gender==='F'?'해누리':'해우리'));
+    s.rankIdx=1; s.hp=50; s.maxHP=50; s.gold=0;
+    el.start.style.display="none";
+    el.game.style.display="block";
+    spawnEnemy();
+  }
+
+  el.btnStart.onclick=e=>{e.preventDefault();onStart();};
+  el.btnStart.addEventListener("click",e=>{e.preventDefault();onStart();});
+
+  el.orgPolice.onclick=()=>{s.org="police";};
+  el.orgCoast.onclick=()=>{s.org="coast";};
+  el.genderM.onclick=()=>{s.gender="M";};
+  el.genderF.onclick=()=>{s.gender="F";};
+
+  el.btnRoll.onclick=()=>{
+    const p=Math.floor(Math.random()*6)+1,e=Math.floor(Math.random()*6)+1;
+    el.pDice.textContent=DICE[p-1]; el.eDice.textContent=DICE[e-1];
+    s.enemyHP-=p; s.hp-=e; updateHUD();
+    if(s.enemyHP<=0){s.lvl++;spawnEnemy();el.msg.textContent="제압 완료!";}
+    else if(s.hp<=0){el.msg.textContent="순직...";}
+    else {el.msg.textContent="⚔️ 제압 중...";}
+  };
+})();
+</script>
+</body>
+</html>
