@@ -212,7 +212,8 @@
     demotionCount:0,
     lastRankChangeMonths:0,
     promotions:[],
-    lastYearCheckAt:0
+    lastYearCheckAt:0,
+    promoFailCountByRank:{}
   };
 
   const rint=(a,b)=>Math.floor(Math.random()*(b-a+1))+a;
@@ -225,7 +226,7 @@
   const fmtNthYear=(months)=> `${Math.floor((months||0)/12)}년차`;
   const monthsInRank=()=> state.monthsAccum - state.lastRankChangeMonths;
 
-  // Radio-like selection (but optional; unselected are randomized on start)
+  // Radio-like selection (optional; unselected will randomize on start)
   function setupRadioGroup(container, selector, onSelect){
     const btns = Array.from(container.querySelectorAll(selector));
     btns.forEach(b=>{
@@ -258,7 +259,36 @@
   const closePopup=()=> el.pop.style.display="none";
   el.popOk.onclick=closePopup; el.pop.onclick=e=>{ if(e.target===el.pop) closePopup(); };
 
-  const openPromo=(title,desc, rollCallback)=>{
+  // ==== Promotion requirement & discount helpers ====
+  function tryPromoteRollRequirement(idx){
+    if(idx===0) return 3;
+    if(idx>=1 && idx<=2) return 4;
+    if(idx>=3 && idx<=4) return 5;
+    if(idx>=5 && idx<=6) return 6;
+    if(idx>=7 && idx<=8) return 7;
+    return 8;
+  }
+  function costGroupForRank(idx){
+    if(idx <= 2) return 'low';
+    if(idx <= 6) return 'mid';
+    if(idx <= 10) return 'high';
+    return 'none';
+  }
+  function discountFromFailures(idx){
+    const cnt = state.promoFailCountByRank[idx]||0;
+    const grp = costGroupForRank(idx);
+    if(grp==='low'){ return Math.min(Math.floor(cnt/2), 1); }
+    if(grp==='mid'){ return Math.min(cnt, 2); }
+    if(grp==='high'){ return Math.min(cnt, 3); }
+    return 0;
+  }
+  function effectiveRequirement(idx){
+    const base = tryPromoteRollRequirement(idx);
+    const disc = discountFromFailures(idx);
+    return Math.max(2, base - disc);
+  }
+
+  const openPromo=(title,desc, onRoll)=>{
     el.promoTitle.textContent = title;
     el.promoDesc.textContent = desc;
     el.promoD1.textContent = "🎲";
@@ -273,7 +303,7 @@
         el.promoD2.classList.remove("shake");
         el.promoD1.textContent = DICE[a-1];
         el.promoD2.textContent = DICE[b-1];
-        rollCallback(a,b);
+        onRoll(a,b);
       },300);
     };
     const onGo = ()=> rollOnce();
@@ -321,7 +351,7 @@
     const startStr = new Date(state.startDate).toLocaleDateString('ko-KR',{year:'numeric',month:'long',day:'numeric'});
     const lastGold = state.finalGold || state.gold || 0;
     base.push(`입사 : ${startStr} ${orgName()} ${state.entryRank}`);
-    base.push(`현재 계급 : ${RANKS[state.rankIdx]}`);
+    base.push(`현재 계급 : ${RANKS[state.rankIdx]} (현재계급 ${fmtNthYear(state.monthsAccum)})`);
     base.push(`근무기간 : ${fmtYM(state.monthsAccum)}`);
     base.push(`마지막 보유 골드 : ${lastGold}`);
   }
@@ -334,7 +364,11 @@
     $("endTitle").textContent = title;
     $("endList").innerHTML=lines.map(s=>`<li>${s}</li>`).join("");
     if(state.promotions.length){
-      $("promoList").innerHTML = state.promotions.map(p=>{ const ty=`${Math.floor((p.tenure||0)/12)}년 ${String((p.tenure||0)%12).padStart(2,"0")}개월`; return `<li>• ${p.from}→${p.to} : ${fmtNthYear(p.at)} (해당 계급 재직 ${ty})</li>`;}).join("");
+      $("promoList").innerHTML = state.promotions.map(p=>{
+        const nth=`${Math.floor((p.at||0)/12)}년차`;
+        const tyY=Math.floor((p.tenure||0)/12), tyM=(p.tenure||0)%12;
+        return `<li>• ${p.from}→${p.to} : ${nth} (해당 계급 재직 ${tyY}년 ${String(tyM).padStart(2,"0")}개월)</li>`;
+      }).join("");
     }else{
       $("promoList").innerHTML = `<li class="small">기록 없음</li>`;
     }
@@ -355,7 +389,7 @@
   const logRankChange=(kind, prevIdx, nowIdx)=>{
     const R=RANKS, prev=R[prevIdx], now=R[nowIdx];
     const icon=kind.includes('근속')?'🏆':(kind.startsWith('승진')?'⬆️':'⬇️');
-    state.changeLog.push(`${icon} ${prev} → ${now} ${kind}`);
+    state.changeLog.push(`${icon} ${prev} → ${now} ${kind} (현재계급 ${fmtNthYear(state.monthsAccum)})`);
   };
 
   const costForRank=(idx)=>{
@@ -388,25 +422,37 @@
     return false;
   }
 
-  // 연간(현 계급 만 1/2/3년) 승진 버튼 활성화 및 자동 팝업
+  // 연차(만 1/2/3년) 승진 버튼 활성화 및 자동 팝업 (비용은 '굴리기' 클릭 시 차감)
   function updatePromotionAvailability(){
     const mir = monthsInRank();
-    const isAnniv = (mir>0) && (mir % 12 === 0); // 정확히 연차 도달
+    const isAnniv = (mir>0) && (mir % 12 === 0);
     const needMonths = minMonthsForNext(state.rankIdx);
     const allow = isAnniv && (mir >= needMonths) && (state.rankIdx < RANKS.length-1);
     el.btnPromote.disabled = !allow;
     el.btnPromote.style.display = allow ? "" : "none";
     el.btnPromote.title = allow ? "연차 도달! 승진 도전 가능" : "연차가 되면 자동으로 활성화됩니다.";
     if(allow){
-      const req = tryPromoteRollRequirement(state.rankIdx);
-      // require cost to attempt
-      if(state.gold < state.cost){ openPopup("💰 부족", [`연차 승진도전 비용 ${state.cost}💰이 필요합니다.`]); return; }
-      state.gold -= state.cost; updateHUD();
-      openPromo("🎖️ 연차 승진도전", `필요 ${req}점 (비용 ${state.cost}💰)`, (a,b)=>{
-        // cost already validated before opening
+      const baseReq = tryPromoteRollRequirement(state.rankIdx);
+      const disc = discountFromFailures(state.rankIdx);
+      const reqEff = effectiveRequirement(state.rankIdx);
+      openPromo("🎖️ 연차 승진도전", `필요 ${reqEff}점 (기본 ${baseReq}점, 완화 -${disc})`, (a,b)=>{
+        if(state.gold < state.cost){ openPopup("💰 부족", [`연차 승진도전 비용 ${state.cost}💰이 필요합니다.`]); return; }
+        state.gold -= state.cost; updateHUD();
         const sum=a+b;
-        if(sum >= req){ doPromote("승진도전 성공(연차)"); openPopup("✅ 승진 성공", [`필요${req}점, 당신의 점수 ${sum}점 성공`, "혜택: 최대체력 +10"]); }
-        else{ openPopup("❌ 연차 승진 실패", [`필요${req}점, 당신의 점수 ${sum}점 실패`]); }
+        if(sum >= reqEff){
+          const prevIdx=state.rankIdx;
+          doPromote("승진도전 성공(연차)");
+          state.promoFailCountByRank[prevIdx]=0;
+          if(costGroupForRank(prevIdx)==='high'){
+            state.gold += 10; state.hp = Math.min(state.maxHP, state.hp + 10); updateHUD();
+            openPopup("✅ 승진 성공", [`필요${reqEff}점, 당신의 점수 ${sum}점 성공`, "혜택: 최대체력 +10 · 보너스 +10💰, ❤️+10"]);
+          }else{
+            openPopup("✅ 승진 성공", [`필요${reqEff}점, 당신의 점수 ${sum}점 성공`, "혜택: 최대체력 +10"]);
+          }
+        }else{
+          const ridx=state.rankIdx; state.promoFailCountByRank[ridx]=(state.promoFailCountByRank[ridx]||0)+1;
+          openPopup("❌ 연차 승진 실패", [`필요${reqEff}점, 당신의 점수 ${sum}점 실패`]);
+        }
         el.promo.style.display="none";
         el.btnPromote.disabled = true; el.btnPromote.style.display="none";
       });
@@ -483,7 +529,7 @@
     },300);
   };
 
-  // 새 격발 스펙
+  // 격발 스펙
   function fireStats(){
     return (state.ammo==='9mm') ? {cost:4, hit:0.68, min:20, max:40} : {cost:3, hit:0.75, min:10, max:25};
   }
@@ -534,42 +580,7 @@
   el.btnRest.onclick=()=>{ if(state.ended) return; state.hp=Math.min(state.maxHP,state.hp+5); updateHUD(); spawnEnemy(); };
   el.btnBuyBag.onclick=()=>{ if(state.ended) return; if(state.gold>=5){ state.gold-=5; state.bags+=1; updateHUD(); } else{ el.msg.textContent="💰 골드가 부족합니다!"; } };
 
-  function tryPromoteRollRequirement(idx){
-    if(idx===0) return 3;
-    if(idx>=1 && idx<=2) return 4;
-    if(idx>=3 && idx<=4) return 5;
-    if(idx>=5 && idx<=6) return 6;
-    if(idx>=7 && idx<=8) return 7;
-    return 8;
-  }
-
-  function minMonthsForNext(idx){
-    if(idx===0) return 36;
-    if(idx>=1 && idx<=4) return 12;
-    if(idx>=5 && idx<=6) return 24;
-    if(idx>=7 && idx<=9) return 12;
-    return 0;
-  }
-
-  function recordPromotion(prevIdx, nowIdx, kindLabel="승진"){
-    logRankChange(kindLabel, prevIdx, nowIdx);
-    const tenureM = state.monthsAccum - state.lastRankChangeMonths;
-    state.promotions.push({from:RANKS[prevIdx], to:RANKS[nowIdx], at: state.monthsAccum, tenure: tenureM});
-    state.lastRankChangeMonths = state.monthsAccum;
-  }
-
-  function doPromote(kindLabel="승진"){
-    const TOP=RANKS.length-1;
-    if(state.rankIdx>=TOP){ openEnding("명예퇴직"); return; }
-    const prevIdx=state.rankIdx; const prev=RANKS[prevIdx];
-    state.rankIdx+=1;
-    state.cost = costForRank(state.rankIdx);
-    state.maxHP+=10; state.hp=Math.min(state.maxHP,state.hp+99);
-    recordPromotion(prevIdx, state.rankIdx, kindLabel);
-    updateHUD(); openPopup("🎖️ " + kindLabel + "!",[`계급: ${prev} → ${RANKS[state.rankIdx]}`,`최대체력 +10`]);
-  }
-
-  // 수동 승진도전 버튼: *연차 도달 시*에만 활성화. 필요점수/내점수 문구 표기.
+  // 수동 승진도전 버튼: 연차에서만 활성, 비용은 굴릴 때 차감, 요구/완화 표시
   el.btnPromote.onclick=()=>{
     if(state.ended) return;
     const mir = monthsInRank();
@@ -581,18 +592,72 @@
       openPopup("⏳ 승진도전 불가", `현 계급에서 최소 ${Math.floor(needMonths/12)}년 경과 후 도전 가능 (현재: ${fmtYM(mir)})`);
       return;
     }
-    const req = tryPromoteRollRequirement(state.rankIdx);
-    openPromo("🎖️ 승진도전", `필요 ${req}점 (비용 ${state.cost}💰 지불됨)`, (a,b)=>{
+    const baseReq = tryPromoteRollRequirement(state.rankIdx);
+    const disc = discountFromFailures(state.rankIdx);
+    const reqEff = effectiveRequirement(state.rankIdx);
+    openPromo("🎖️ 승진도전", `필요 ${reqEff}점 (기본 ${baseReq}점, 완화 -${disc})`, (a,b)=>{
+      if(state.gold < state.cost){ openPopup("💰 부족", [`승진도전 비용 ${state.cost}💰이 필요합니다.`]); return; }
+      state.gold -= state.cost; updateHUD();
       const sum=a+b;
-      if(sum >= req){
+      if(sum >= reqEff){
+        const prevIdx = state.rankIdx;
         doPromote("승진도전 성공");
-        openPopup("✅ 승진 성공", [`필요${req}점, 당신의 점수 ${sum}점 성공`, "혜택: 최대체력 +10"]);
+        state.promoFailCountByRank[prevIdx] = 0;
+        if(costGroupForRank(prevIdx)==='high'){
+          state.gold += 10; state.hp = Math.min(state.maxHP, state.hp + 10); updateHUD();
+          openPopup("✅ 승진 성공", [`필요${reqEff}점, 당신의 점수 ${sum}점 성공`, "혜택: 최대체력 +10 · 보너스 +10💰, ❤️+10"]);
+        }else{
+          openPopup("✅ 승진 성공", [`필요${reqEff}점, 당신의 점수 ${sum}점 성공`, "혜택: 최대체력 +10"]);
+        }
       }else{
-        openPopup("❌ 승진 실패", [`필요${req}점, 당신의 점수 ${sum}점 실패`]);
+        const ridx=state.rankIdx; state.promoFailCountByRank[ridx]=(state.promoFailCountByRank[ridx]||0)+1;
+        openPopup("❌ 승진 실패", [`필요${reqEff}점, 당신의 점수 ${sum}점 실패`]);
       }
       el.promo.style.display="none";
       el.btnPromote.disabled = true; el.btnPromote.style.display="none";
     });
+  };
+
+  function minMonthsForNext(idx){
+    if(idx===0) return 36;
+    if(idx>=1 && idx<=4) return 12;
+    if(idx>=5 && idx<=6) return 24;
+    if(idx>=7 && idx<=9) return 12;
+    return 0;
+  }
+
+  function recordPromotion(prevIdx, nowIdx, kindLabel="승진"){
+    const tenureM = state.monthsAccum - state.lastRankChangeMonths;
+    logRankChange(kindLabel, prevIdx, nowIdx);
+    state.promotions.push({from:RANKS[prevIdx], to:RANKS[nowIdx], at: state.monthsAccum, tenure: tenureM});
+    state.lastRankChangeMonths = state.monthsAccum;
+  }
+
+  function doPromote(kindLabel="승진"){
+    const TOP=RANKS.length-1;
+    if(state.rankIdx>=TOP){ openEnding("명예퇴직"); return; }
+    const prevIdx=state.rankIdx; const prev=RANKS[prevIdx];
+    state.rankIdx+=1;
+    state.cost = costForRank(state.rankIdx);
+    state.maxHP+=10; state.hp=Math.min(state.maxHP,state.hp+99);
+    // reset fail stack for previous rank
+    state.promoFailCountByRank[prevIdx] = 0;
+    recordPromotion(prevIdx, state.rankIdx, kindLabel);
+    updateHUD(); openPopup("🎖️ " + kindLabel + "!",[`계급: ${prev} → ${RANKS[state.rankIdx]}`,`최대체력 +10`]);
+  }
+
+  el.btnUseBag.onclick=()=>{
+    if(state.ended) return;
+    if(state.hp>=state.maxHP){ $("msg").textContent="❤️ 체력이 가득 찼습니다."; return; }
+    if(state.bags>0){
+      state.bags-=1; state.hp=Math.min(state.maxHP,state.hp+30); updateHUD();
+      if(el.after.style.display==="none"){
+        setBtns(false);
+        enemyCounterThenResume();
+      }else{
+        $("msg").textContent="💉 구급함 사용: ❤️+30";
+      }
+    } else{ $("msg").textContent="💉 구급함이 없습니다!"; }
   };
 
   function applyStartRank(){
@@ -623,13 +688,12 @@
       level:1, maxHP:50, hp:50, gold:0, bags:0, enemyHP:0, enemyLabel:"", cost:10,
       ended:false, startDate:new Date(), defeated:{},
       changeLog:[], monthsAccum:0, finalGold:0, equalStreak:0, ammo:'22lr', demotionCount:0,
-      lastRankChangeMonths:0, promotions:[], lastYearCheckAt:0
+      lastRankChangeMonths:0, promotions:[], lastYearCheckAt:0, promoFailCountByRank:{}
     });
     el.start.style.display="flex"; el.game.style.display="none"; resetSelections(); setBtns(true); updateHUD();
   }
 
   el.btnStart.onclick=()=>{
-    // 무작위 보정: 미선택 항목만 랜덤
     if(!state.org) state.org = Math.random()<0.5?'police':'coast';
     if(!state.gender) state.gender = Math.random()<0.5?'M':'F';
     if(!(state.startRankIdx===1 || state.startRankIdx===4)) state.startRankIdx = 1;
