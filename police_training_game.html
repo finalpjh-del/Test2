@@ -324,6 +324,13 @@
     return false;
   }
 
+  function showAfterPanelThenAccrue(){
+    showAfterPanelThenAccrue();
+    state.monthsAccum += 4; // 제압 완료 후 4개월 누적
+    checkLongServicePromotion();
+    checkRetirement();
+    updatePromotionAvailability();
+  }
   function handleVictory(){
     addDefeated();
     let text="";
@@ -345,7 +352,7 @@
       const earned=grantGold(); text=`적을 제압했다! +${earned} 골드 획득!`;
     }
     el.btnAmmo.textContent = state.ammo==='22lr' ? "🔄 다음 턴 탄종: 9mm" : "🔄 다음 턴 탄종: 22lr";
-    el.msg.textContent=text; setBtns(false); el.after.style.display="block";
+    el.msg.textContent=text; setBtns(false); showAfterPanelThenAccrue();
     if(state.level>=MAX_LEVEL){ openEnding("정년퇴직"); }
     else{ state.level+=1; }
   }
